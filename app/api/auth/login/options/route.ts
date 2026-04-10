@@ -1,24 +1,27 @@
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 import dbConnect from '@/lib/db';
-import { Challenge, UserCredential } from '@/lib/models';
+import { Challenge, User } from '@/lib/models';
 
 export async function POST(req: Request) {
     await dbConnect();
     const { userId } = await req.json();
 
     // Check if user is registered in MongoDB
-    const userCredential = await UserCredential.findOne({ userId });
-    if (!userCredential) {
-        return Response.json({ status: 'error', message: 'User not registered. Please register first.' }, { status: 400 });
+    const user = await User.findOne({ userId });
+    if (!user || !user.credentials || user.credentials.length === 0) {
+        return Response.json({ status: 'error', message: 'User not registered or no credentials found. Please register first.' }, { status: 400 });
     }
+
+    const allowCredentials = user.credentials.map((cred: any) => ({
+        id: cred.credentialID,
+        type: 'public-key' as const,
+        transports: cred.transports && cred.transports.length > 0 ? cred.transports : ['internal', 'hybrid'],
+    }));
 
     const options = await generateAuthenticationOptions({
         rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
         userVerification: 'required',
-        allowCredentials: [{
-            id: userCredential.credentialID,
-            transports: ['internal', 'hybrid'] as any
-        }]
+        allowCredentials
     });
 
     // Save login challenge to DB

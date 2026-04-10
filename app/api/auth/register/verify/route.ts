@@ -1,6 +1,6 @@
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 import dbConnect from '@/lib/db';
-import { Challenge, UserCredential } from '@/lib/models';
+import { Challenge, User } from '@/lib/models';
 
 export async function POST(req: Request) {
     await dbConnect();
@@ -29,14 +29,17 @@ export async function POST(req: Request) {
 
             const { credential } = verification.registrationInfo;
 
-            // 100% REAL: Store the user's authentic physical public key and ID in MongoDB
-            await UserCredential.findOneAndUpdate(
+            // 100% REAL: Support Multi-Device keys by pushing into an Array securely!
+            const newCredential = {
+                credentialID: credential.id,
+                credentialPublicKey: Buffer.from(credential.publicKey),
+                counter: credential.counter,
+                transports: credential.transports || []
+            };
+
+            await User.findOneAndUpdate(
                 { userId },
-                {
-                    credentialID: credential.id,
-                    credentialPublicKey: Buffer.from(credential.publicKey),
-                    counter: credential.counter
-                },
+                { $push: { credentials: newCredential } },
                 { upsert: true, new: true }
             );
             return Response.json({ verified: true });

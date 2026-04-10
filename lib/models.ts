@@ -6,11 +6,16 @@ const ChallengeSchema = new Schema({
     createdAt: { type: Date, default: Date.now, expires: 300 } // Challenge expires in 5 minutes
 });
 
-const UserCredentialSchema = new Schema({
-    userId: { type: String, required: true, unique: true },
+const CredentialSchema = new Schema({
     credentialID: { type: String, required: true }, 
-    credentialPublicKey: { type: Buffer, required: true }, // Binary standard for FIDO keys map well to buffers
-    counter: { type: Number, required: true, default: 0 }
+    credentialPublicKey: { type: Buffer, required: true }, 
+    counter: { type: Number, required: true, default: 0 },
+    transports: { type: [String], default: [] }
+});
+
+const UserSchema = new Schema({
+    userId: { type: String, required: true, unique: true },
+    credentials: [CredentialSchema]
 });
 
 const SessionHardwareAnchorSchema = new Schema({
@@ -20,5 +25,5 @@ const SessionHardwareAnchorSchema = new Schema({
 });
 
 export const Challenge = mongoose.models.Challenge || mongoose.model('Challenge', ChallengeSchema);
-export const UserCredential = mongoose.models.UserCredential || mongoose.model('UserCredential', UserCredentialSchema);
+export const User = mongoose.models.User || mongoose.model('User', UserSchema);
 export const SessionHardwareAnchor = mongoose.models.SessionHardwareAnchor || mongoose.model('SessionHardwareAnchor', SessionHardwareAnchorSchema);
