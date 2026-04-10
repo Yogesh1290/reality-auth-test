@@ -8,8 +8,13 @@ const rl = new RealityLimitAuth();
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        // Determine the user's ID from session/token (simplified for demo to a hardcoded user, but fetch the anchor)
-        const userId = 'vlog-demo-user';
+        
+        // Fully dynamic multi-tenant user extraction from headers for protection route!
+        const userId = req.headers.get('x-rl-user');
+        
+        if (!userId) {
+            return Response.json({ status: 'error', message: 'Missing user identification' }, { status: 401 });
+        }
         
         const sessionAnchorDoc = await SessionHardwareAnchor.findOne({ userId });
 

@@ -9,7 +9,7 @@ import { ShieldCheck, Fingerprint, Lock, ArrowRight, Loader2, CheckCircle2 } fro
 const rl = new RealityLimitAuth();
 
 export default function Home() {
-  const [userId] = useState("vlog-demo-user");
+  const [userId, setUserId] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -17,6 +17,10 @@ export default function Home() {
   const [balance, setBalance] = useState(125000);
 
   const register = async () => {
+    if (!userId) {
+        setStatus("Please enter a User ID first.");
+        return;
+    }
     setLoading(true);
     setStatus("Generating secure hardware challenge...");
     try {
@@ -46,6 +50,10 @@ export default function Home() {
   };
 
   const login = async () => {
+    if (!userId) {
+        setStatus("Please enter your User ID first.");
+        return;
+    }
     setLoading(true);
     setStatus("Initiating unforgeable login...");
     try {
@@ -69,6 +77,7 @@ export default function Home() {
         // Anchor the client mathematically to the physical hardware
         rl.anchorToHardware(hardwareSignature);
         sessionStorage.setItem("rl_anchor", hardwareSignature); // Preserve physical trace against React hot-reloads
+        sessionStorage.setItem("rl_user", userId);
 
         setStatus("Access Granted. Authentic Hardware Seed Tied.");
         setTimeout(() => setIsAuthenticated(true), 1000);
@@ -101,6 +110,7 @@ export default function Home() {
 
       // Re-anchor to ensure Next.js hot-reloads don't drop the physical state
       const anchor = sessionStorage.getItem("rl_anchor");
+      const activeUser = sessionStorage.getItem("rl_user") || userId;
       if (anchor) rl.anchorToHardware(anchor);
 
       // The magic happens here: Sign the packet using info-theoretic math
@@ -111,7 +121,10 @@ export default function Home() {
       const res = await fetch("/api/protected", {
         method: "POST",
         body: packet as any,
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { 
+            "Content-Type": "application/octet-stream",
+            "x-rl-user": activeUser
+        },
       });
 
       const result = await res.json();
@@ -154,9 +167,20 @@ export default function Home() {
             <h1 className="text-2xl font-bold tracking-tight mb-2 text-center">
               RealityLimit Auth
             </h1>
-            <p className="text-zinc-400 text-sm text-center mb-10 leading-relaxed">
+            <p className="text-zinc-400 text-sm text-center mb-8 leading-relaxed">
               Experience the end-game of authentication. Information-theoretically secure, bound to physical reality.
             </p>
+
+            <div className="w-full mb-6">
+                <input 
+                    type="text" 
+                    value={userId} 
+                    onChange={(e) => setUserId(e.target.value)} 
+                    placeholder="Enter your Username"
+                    disabled={loading}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all font-medium text-center"
+                />
+            </div>
 
             <div className="w-full flex justify-between space-x-4">
               <button
