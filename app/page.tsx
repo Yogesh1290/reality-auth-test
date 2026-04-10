@@ -2,11 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
-import { RealityLimitAuth } from "../lib/reality-limit-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Fingerprint, Lock, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
-
-const rl = new RealityLimitAuth();
 
 export default function Home() {
   const [userId, setUserId] = useState("");
@@ -74,22 +71,14 @@ export default function Home() {
 
       const attResp = await startAuthentication({ optionsJSON: opts });
 
-      // 100% REAL: Extract the physical silicon signature
-      const hardwareSignature = attResp.response.signature;
-
-      setStatus("Establishing pure info-theoretic session...");
+      setStatus("Establishing pure Info-Theoretic session...");
       const verification = await fetch("/api/auth/login/verify", {
         method: "POST",
-        body: JSON.stringify({ attResp, userId, hardwareSignature }),
+        body: JSON.stringify({ attResp, userId }),
       }).then((r) => r.json());
 
       if (verification.verified) {
-        // Anchor the client mathematically to the physical hardware
-        rl.anchorToHardware(hardwareSignature);
-        sessionStorage.setItem("rl_anchor", hardwareSignature); // Preserve physical trace against React hot-reloads
-        sessionStorage.setItem("rl_user", userId);
-
-        setStatus("Access Granted. Authentic Hardware Seed Tied.");
+        setStatus("Access Granted. Authentic Hardware Tied.");
         setTimeout(() => setIsAuthenticated(true), 1000);
       } else {
         setStatus("Authentication Failed.");
@@ -105,46 +94,45 @@ export default function Home() {
     if (!amount || isNaN(Number(amount))) return;
 
     setLoading(true);
-    setStatus("Computing Carter-Wegman unconditional MAC...");
+    setStatus("Initiating Physical Transaction Handshake...");
 
     try {
-      // Create JSON payload
-      const actionPayload = JSON.stringify({
+      const intent = {
         action: "wire-transfer",
         amount: Number(amount),
         destination: "Offshore Vault 09x",
         timestamp: Date.now()
-      });
+      };
 
-      const msg = new TextEncoder().encode(actionPayload);
+      // Ensure keyboard closes on Mobile
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+      }
 
-      // Re-anchor to ensure Next.js hot-reloads don't drop the physical state
-      const anchor = sessionStorage.getItem("rl_anchor");
-      const activeUser = sessionStorage.getItem("rl_user") || userId;
-      if (anchor) rl.anchorToHardware(anchor);
-
-      // The magic happens here: Sign the packet using info-theoretic math
-      const packet = rl.createPacket(msg);
-
-      setStatus("Sending pure signed packet...");
-
-      const res = await fetch("/api/protected", {
+      setStatus("Please approve the transaction on your authenticator...");
+      
+      const opts = await fetch("/api/protected/options", {
         method: "POST",
-        body: packet as any,
-        headers: { 
-            "Content-Type": "application/octet-stream",
-            "x-rl-user": activeUser
-        },
+        body: JSON.stringify({ userId, intent }),
+      }).then((r) => r.json());
+
+      const attResp = await startAuthentication({ optionsJSON: opts });
+
+      setStatus("Sending pure physically-signed packet...");
+
+      const res = await fetch("/api/protected/verify", {
+        method: "POST",
+        body: JSON.stringify({ attResp, userId })
       });
 
       const result = await res.json();
 
-      if (res.ok) {
+      if (result.verified) {
         setBalance(prev => prev - Number(amount));
         setStatus(result.message);
         setAmount("");
       } else {
-        setStatus(result.message);
+        setStatus(result.error || "Transaction Failed");
       }
     } catch (e: any) {
       setStatus("Error: " + e.message);
