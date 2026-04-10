@@ -17,6 +17,12 @@ export default function Home() {
   const [balance, setBalance] = useState(125000);
 
   const register = async () => {
+    // FIX: Force Mobile virtual keyboards (iOS Safari) to close immediately.
+    // If the keyboard animates down exactly when the fetch resolves, Apple blocks WebAuthn with "document is not focused"!
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
+
     if (!userId) {
         setStatus("Please enter a User ID first.");
         return;
@@ -50,6 +56,10 @@ export default function Home() {
   };
 
   const login = async () => {
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
+
     if (!userId) {
         setStatus("Please enter your User ID first.");
         return;
