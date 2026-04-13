@@ -17,14 +17,14 @@ export async function POST(req: Request) {
         transports: cred.transports && cred.transports.length > 0 ? cred.transports : ['internal', 'hybrid'],
     }));
 
-    // generate FIDO challenge
+    // Generate a fresh FIDO challenge bound to this intent
     const options = await generateAuthenticationOptions({
         rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
         userVerification: 'required',
         allowCredentials
     });
 
-    // Save transaction challenge explicitly marking the intent
+    // Store challenge with the intent — server side, tamper-proof
     await Challenge.create({
         userId,
         challenge: options.challenge,

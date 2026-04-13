@@ -21,26 +21,29 @@ export async function POST(req: Request) {
         return Response.json({ verified: false, error: 'Authenticator is not mapped to this user' }, { status: 400 });
     }
 
-    // Check sufficient balance before signing
+    // Reject if insufficient balance BEFORE hardware prompt fires
     const transferAmount = Number(intent.amount || 0);
-    if (user.balance < transferAmount) {
+    if ((user.balance ?? 125000) < transferAmount) {
         return Response.json({ verified: false, error: `Insufficient balance. Available: $${user.balance}` }, { status: 400 });
     }
 
     try {
+        // Hardware FIDO2 signature verification — this IS the security
+        // No session, no cookie, no software token can substitute this
         const verification = await verifyTransactionExecution(
-             process.env.NEXT_PUBLIC_RP_ID || 'localhost',
-             process.env.NEXT_PUBLIC_ORIGIN || 'http://localhost:3000',
-             attResp,
-             challengeDoc.challenge,
-             activeCredential
+            process.env.NEXT_PUBLIC_RP_ID || 'localhost',
+            process.env.NEXT_PUBLIC_ORIGIN || 'http://localhost:3000',
+            attResp,
+            challengeDoc.challenge,
+            activeCredential
         );
 
         if (verification.verified) {
+            // Consume challenge — single use, cannot be replayed
             await Challenge.deleteOne({ _id: challengeDoc._id });
             activeCredential.counter = verification.authenticationInfo.newCounter;
 
-            // Deduct balance and persist to DB
+            // Deduct balance and persist
             user.balance = (user.balance ?? 125000) - transferAmount;
             await user.save();
 

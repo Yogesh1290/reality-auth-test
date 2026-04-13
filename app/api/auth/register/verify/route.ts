@@ -5,14 +5,14 @@ import { Challenge, User } from '@/lib/models';
 export async function POST(req: Request) {
     await dbConnect();
     const { attResp, userId } = await req.json();
-    
+
     // Retrieve challenge from DB
     const challengeDoc = await Challenge.findOne({ userId });
 
     if (!challengeDoc) {
         return Response.json({ verified: false, error: 'Challenge expired or missing' }, { status: 400 });
     }
-    
+
     const expectedChallenge = challengeDoc.challenge;
 
     try {
