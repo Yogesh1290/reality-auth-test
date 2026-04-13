@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
+import { executeProtectedAction } from "@realitylimit/core/browser";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldCheck, Fingerprint, Lock, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Fingerprint, Lock, ArrowRight, Loader2, CheckCircle2, Smartphone, Trash2, Key, PlusCircle } from "lucide-react";
+
+type Device = { credentialID: string; deviceName: string; registeredAt: string | null; counter: number };
 
 export default function Home() {
   const [userId, setUserId] = useState("");
@@ -12,6 +15,15 @@ export default function Home() {
   const [status, setStatus] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [balance, setBalance] = useState(125000);
+
+  // Device management state
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [hasRecoveryCode, setHasRecoveryCode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [showDevicePanel, setShowDevicePanel] = useState(false);
+  const [newDeviceName, setNewDeviceName] = useState("");
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [showRecovery, setShowRecovery] = useState(false);
 
   const register = async () => {
     // FIX: Force Mobile virtual keyboards (iOS Safari) to close immediately.
@@ -89,7 +101,99 @@ export default function Home() {
     setLoading(false);
   };
 
+  const loadDevices = async () => {
+    const data = await fetch(`/api/auth/devices/list?userId=${userId}`).then(r => r.json());
+    if (data.devices) {
+      setDevices(data.devices);
+      setHasRecoveryCode(data.hasRecoveryCode);
+    }
+  };
+
+  const addDevice = async () => {
+    if (!newDeviceName) { setStatus("Enter a name for the new device first."); return; }
+    setLoading(true);
+    setStatus("Preparing new device registration...");
+    try {
+      const opts = await fetch("/api/auth/devices/add/options", {
+        method: "POST", body: JSON.stringify({ userId, deviceName: newDeviceName })
+      }).then(r => r.json());
+      const attResp = await startRegistration({ optionsJSON: opts });
+      const result = await fetch("/api/auth/devices/add/verify", {
+        method: "POST", body: JSON.stringify({ userId, attResp, deviceName: newDeviceName })
+      }).then(r => r.json());
+      if (result.verified) {
+        setStatus(`✅ ${result.message}`);
+        setNewDeviceName("");
+        await loadDevices();
+      } else {
+        setStatus("Device registration failed: " + result.error);
+      }
+    } catch (e: any) { setStatus("Error: " + e.message); }
+    setLoading(false);
+  };
+
+  const removeDevice = async (credentialID: string, deviceName: string) => {
+    if (!confirm(`Remove "${deviceName}"? Make sure you have another device registered.`)) return;
+    setLoading(true);
+    setStatus(`Removing ${deviceName}...`);
+    try {
+      const result = await fetch("/api/auth/devices/remove", {
+        method: "DELETE", body: JSON.stringify({ userId, credentialID })
+      }).then(r => r.json());
+      if (result.verified) {
+        setStatus(`✅ ${result.message}`);
+        await loadDevices();
+      } else {
+        setStatus("Error: " + result.error);
+      }
+    } catch (e: any) { setStatus("Error: " + e.message); }
+    setLoading(false);
+  };
+
+  const generateRecovery = async () => {
+    setLoading(true);
+    setStatus("Generating recovery code...");
+    try {
+      const result = await fetch("/api/auth/recovery/generate", {
+        method: "POST", body: JSON.stringify({ userId })
+      }).then(r => r.json());
+      if (result.recoveryCode) {
+        setRecoveryCode(result.recoveryCode);
+        setHasRecoveryCode(true);
+        setStatus("✅ Recovery code generated. Save it securely — it will not be shown again.");
+      }
+    } catch (e: any) { setStatus("Error: " + e.message); }
+    setLoading(false);
+  };
+
+  const useRecoveryCode = async () => {
+    if (!recoveryInput) return;
+    setLoading(true);
+    setStatus("Verifying recovery code...");
+    try {
+      const opts = await fetch("/api/auth/recovery/verify", {
+        method: "POST", body: JSON.stringify({ userId, recoveryCode: recoveryInput, deviceName: "Recovered Device" })
+      }).then(r => r.json());
+      if (opts.error) { setStatus("❌ " + opts.error); setLoading(false); return; }
+      setStatus("Recovery code valid! Complete biometric registration on this device...");
+      const attResp = await startRegistration({ optionsJSON: opts });
+      const result = await fetch("/api/auth/devices/add/verify", {
+        method: "POST", body: JSON.stringify({ userId, attResp, deviceName: "Recovered Device" })
+      }).then(r => r.json());
+      if (result.verified) {
+        setStatus("✅ Recovery complete! New device registered. Recovery code invalidated.");
+        setShowRecovery(false);
+        setRecoveryInput("");
+        setIsAuthenticated(true);
+      } else {
+        setStatus("Error: " + result.error);
+      }
+    } catch (e: any) { setStatus("Error: " + e.message); }
+    setLoading(false);
+  };
+
   const transfer = async (e: React.FormEvent) => {
+
     e.preventDefault();
     if (!amount || isNaN(Number(amount))) return;
 
@@ -104,19 +208,15 @@ export default function Home() {
         timestamp: Date.now()
       };
 
-      // Ensure keyboard closes on Mobile
-      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-      }
-
-      setStatus("Please approve the transaction on your authenticator...");
-      
+      // 1. Fetch the Intent Options from backend
       const opts = await fetch("/api/protected/options", {
         method: "POST",
         body: JSON.stringify({ userId, intent }),
       }).then((r) => r.json());
 
-      const attResp = await startAuthentication({ optionsJSON: opts });
+      // 2. Trigger the OS Physical Hardware natively using the SDK 
+      // (This inherently protects against Safari bug and OS focus issues)
+      const attResp = await executeProtectedAction(opts);
 
       setStatus("Sending pure physically-signed packet...");
 
@@ -199,6 +299,14 @@ export default function Home() {
                 <span>Login</span>
               </button>
             </div>
+
+            <button
+              onClick={() => setShowRecovery(!showRecovery)}
+              className="mt-4 text-xs text-zinc-600 hover:text-zinc-400 transition-colors flex items-center space-x-1"
+            >
+              <Key className="w-3 h-3" />
+              <span>Lost your device? Use recovery code</span>
+            </button>
 
             <AnimatePresence>
               {status && (
@@ -302,14 +410,144 @@ export default function Home() {
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-panel rounded-xl p-4 border-l-4 border-l-emerald-500"
+                  className="glass-panel rounded-xl p-4 border-l-4 border-l-emerald-500 mb-6"
                 >
                   <p className="text-sm text-zinc-300 font-mono break-words">{status}</p>
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Device Management Panel */}
+            <div className="glass-panel rounded-3xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <Smartphone className="w-5 h-5 text-zinc-400" />
+                  <h3 className="text-white font-semibold">Device Management</h3>
+                </div>
+                <button
+                  onClick={() => { setShowDevicePanel(!showDevicePanel); if (!showDevicePanel) loadDevices(); }}
+                  className="text-xs text-zinc-400 hover:text-white transition-colors"
+                >
+                  {showDevicePanel ? "Hide" : "Manage Devices"}
+                </button>
+              </div>
+
+              <AnimatePresence>
+                {showDevicePanel && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-5 overflow-hidden">
+
+                    {/* Registered Devices List */}
+                    <div>
+                      <p className="text-xs text-zinc-500 uppercase tracking-widest mb-3">Registered Devices</p>
+                      {devices.length === 0 ? (
+                        <p className="text-zinc-500 text-sm">Loading...</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {devices.map((device) => (
+                            <div key={device.credentialID} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
+                              <div className="flex items-center space-x-3">
+                                <Smartphone className="w-4 h-4 text-emerald-400" />
+                                <div>
+                                  <p className="text-white text-sm font-medium">{device.deviceName}</p>
+                                  <p className="text-zinc-500 text-xs">
+                                    {device.registeredAt ? new Date(device.registeredAt).toLocaleDateString() : "Unknown date"}
+                                    {" · "}Counter: {device.counter}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeDevice(device.credentialID, device.deviceName)}
+                                disabled={loading || devices.length <= 1}
+                                className="text-red-400 hover:text-red-300 disabled:text-zinc-700 transition-colors"
+                                title={devices.length <= 1 ? "Cannot remove last device" : "Remove device"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Add New Device */}
+                    <div>
+                      <p className="text-xs text-zinc-500 uppercase tracking-widest mb-3">Add Another Device</p>
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          value={newDeviceName}
+                          onChange={(e) => setNewDeviceName(e.target.value)}
+                          placeholder="Device name (e.g. MacBook)"
+                          className="flex-1 bg-black/40 border border-white/10 rounded-xl py-2 px-4 text-white placeholder:text-zinc-600 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        />
+                        <button
+                          onClick={addDevice}
+                          disabled={loading}
+                          className="flex items-center space-x-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                        >
+                          <PlusCircle className="w-4 h-4" />
+                          <span>Register</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Recovery Code */}
+                    <div>
+                      <p className="text-xs text-zinc-500 uppercase tracking-widest mb-3">Recovery Code</p>
+                      {recoveryCode ? (
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                          <p className="text-yellow-400 text-xs mb-2 font-medium">⚠️ Save this code NOW — it will not be shown again:</p>
+                          <p className="text-white font-mono text-lg tracking-widest select-all">{recoveryCode}</p>
+                          <button onClick={() => setRecoveryCode(null)} className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">I've saved it</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={generateRecovery}
+                          disabled={loading}
+                          className="flex items-center space-x-2 bg-white/5 hover:bg-white/10 text-zinc-300 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                        >
+                          <Key className="w-4 h-4" />
+                          <span>{hasRecoveryCode ? "Regenerate Recovery Code" : "Generate Recovery Code"}</span>
+                        </button>
+                      )}
+                      {hasRecoveryCode && !recoveryCode && (
+                        <p className="text-xs text-emerald-500 mt-2 flex items-center"><CheckCircle2 className="w-3 h-3 mr-1" />Recovery code is set</p>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </motion.div>
         )}
+
+        {/* Recovery Flow (shown on login screen) */}
+        <AnimatePresence>
+          {showRecovery && !isAuthenticated && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="glass-panel p-8 rounded-2xl w-full max-w-md mt-4 relative z-10"
+            >
+              <h2 className="text-white font-semibold mb-2 flex items-center space-x-2"><Key className="w-4 h-4 text-yellow-400" /><span>Account Recovery</span></h2>
+              <p className="text-zinc-500 text-xs mb-4">Enter your recovery code to register a new device.</p>
+              <input
+                type="text"
+                value={recoveryInput}
+                onChange={(e) => setRecoveryInput(e.target.value)}
+                placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-white font-mono placeholder:text-zinc-600 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500/50 mb-3"
+              />
+              <div className="flex space-x-2">
+                <button onClick={useRecoveryCode} disabled={loading || !recoveryInput} className="flex-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Verify & Register New Device"}
+                </button>
+                <button onClick={() => setShowRecovery(false)} className="text-zinc-500 hover:text-white px-3 text-sm transition-colors">Cancel</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </AnimatePresence>
     </main>
   );

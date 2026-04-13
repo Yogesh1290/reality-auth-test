@@ -1,56 +1,126 @@
-# RealityLimit Auth — 100% Authentic Reference Implementation
+# RealityLimit Auth — Web Demo
 
-A revolutionary, mathematics-first web authentication framework that permanently couples physical silicon security (FIDO WebAuthn) with Information-Theoretic Carter-Wegman Message Authentication Codes (MAC).
+> A fully working Next.js 15 reference implementation of the RealityLimit Transaction Authorization Protocol.
 
-**Zero Simulation. Zero Hype. 100% Cryptographic Truth.**
+---
 
-![RealityLimit Auth](https://github.com/user-attachments/assets/0b9fbc38-5f25-4c07-b24e-7b2c011f0624)
+## What This Is
 
-## Abstract
-Traditional web authorization relies on bearer tokens (JWTs, Session Cookies) that are fundamentally forgeable and susceptible to interception or theft. RealityLimit establishes an **Information-Theoretic Security Bound**. It leverages strict Elliptic Curve public key verification (`@simplewebauthn/server`) to validate an authentic FIDO hardware interaction, extracting the raw silicon `signature` buffer to deterministically derive a pure `blake2b(32)` Carter-Wegman MAC Key.
+This is the **reference application** — not the SDK. It demonstrates exactly how to integrate `@realitylimit/core` into a real Next.js banking application.
 
-Every subsequent sensitive action (e.g. wire transfers) is locally signed by the client using this unforgeable MAC. The backend independently verifies the MAC in constant time. 
+It includes a complete flow:
+- **Register** a hardware authenticator (FaceID / Windows Hello) — no passwords
+- **Login** with physical biometric — hardware-verified session
+- **Wire Transfer** — every transaction requires a fresh biometric hardware signature before execution
 
-If an attacker steals the session or intercepts a packet, they **cannot forge a new action** because they lack the physical silicon signature required to solve the RealityLimit math.
+---
 
-## Features
-- **100% Authentic Pipeline:** No dummy variables, `Math.random()`, or simulated hardware seeds. The implementation is aggressively tied to literal hardware cryptography.
-- **W3C WebAuthn Bound:** FaceID, TouchID, and TPMs form the physical root of trust.
-- **Info-Theoretic Packet Armor:** Actions are signed via a one-time Carter-Wegman MAC. Forging a packet without the physical trace is mathematically impossible.
-- **Next.js 16 + Turbopack:** High-performance React 19 Client components handling dynamic binary packet derivation.
-- **Bulletproof Interop:** Uses a custom CJS-to-ESM runtime wrapper to satisfy strict bundler typings for legacy crypto libraries (`blake2b`).
+## How It Relates to the SDK
 
-## System Flow (The Cryptographic Proof)
+```
+@realitylimit/core          ← The NPM package (the math)
+        ↓
+example/web-demo            ← This app (shows how to USE the math)
+  ├── app/api/auth/         ← Your database + WebAuthn registration/login routes
+  ├── app/api/protected/    ← Transaction authorization routes (the novel pattern)
+  ├── lib/db.ts             ← MongoDB connection
+  └── lib/models.ts         ← User + Challenge schema
+```
 
-### 1. Enrollment (`/api/auth/register`)
-The user's device generates an Asymmetric Key Pair inside the secure enclave. The private key never leaves the silicon. The server strictly validates the `.attestationObject` over the Elliptic Curve and stores the `credentialPublicKey`.
+Everything inside `lib/` and `app/api/` is **your application code**. You own it. The SDK (`@realitylimit/core`) powers the cryptographic verification with 3 function calls.
 
-### 2. Physical Binding (`/api/auth/login`)
-The server challenges the device. The secure enclave signs the challenge. 
-The server verifies the signature against the stored Public Key (`verifyAuthenticationResponse`). 
-**Crucially:** the server deterministically extracts the valid `.signature` trace directly from the trusted WebAuthn buffer. This silicon trace is locked onto the session as the fundamental **RealityLimit Anchor**.
+---
 
-### 3. Execution (`/api/protected`)
-When taking action, the React client bundles a JSON command and computes an instantaneous Carter-Wegman MAC over the payload using the hardware trace. 
-The payload and the 32-byte MAC tag are merged into a pure `Uint8Array` binary packet and sent to the server. 
-The backend independently hashes the packet. **If the math is flawless, Reality Limit is preserved.**
+## Setup
 
-## Setup Instructions
+### 1. Copy the environment file
 
-1. Clone the repository and install dependencies:
-   ```bash
-   npm install
-   ```
-2. Run the development server:
-   ```bash
-   npm run dev
-   ```
-3. Open [http://localhost:3000](http://localhost:3000) with your browser.
+```bash
+cp .env.example .env
+```
 
-> **Note:** For WebAuthn to function correctly, the site must be served over `https://` or `http://localhost`.
+Edit `.env`:
+```env
+NEXT_PUBLIC_RP_ID=localhost
+NEXT_PUBLIC_ORIGIN=http://localhost:3000
+MONGODB_URI=mongodb://localhost:27017/realitylimit
+```
 
-## Architecture Deep-Dive
-For absolute proof of the zero-trust mathematical architecture, please refer to the detailed writeup in `ARCHITECTURE.md`.
+> **Required:** MongoDB must be running locally. Install from [mongodb.com](https://www.mongodb.com/try/download/community) or use a free Atlas cluster.
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Run the dev server
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+> **Important:** WebAuthn only works on `https://` or `http://localhost`. It will not work on a plain IP address or non-secure origin.
+
+---
+
+## API Route Map
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/auth/register/options` | POST | Generate WebAuthn registration challenge |
+| `/api/auth/register/verify` | POST | Verify and store the new hardware credential |
+| `/api/auth/login/options` | POST | Generate WebAuthn login challenge |
+| `/api/auth/login/verify` | POST | Verify hardware signature and establish session |
+| `/api/protected/options` | POST | Generate transaction challenge bound to an intent |
+| `/api/protected/verify` | POST | Verify hardware signature and execute stored intent |
+
+---
+
+## SDK Usage in This App
+
+### Backend — `@realitylimit/core/server`
+```typescript
+import { createTransactionOptions, verifyTransactionExecution } from '@realitylimit/core/server';
+
+// Generate a FIDO challenge tied to an intent
+const { options, expectedChallenge } = await createTransactionOptions(rpID, intent, userCredentials);
+
+// Verify the physical silicon signature
+const result = await verifyTransactionExecution(rpID, origin, attResp, challenge, credential);
+```
+
+### Frontend — `@realitylimit/core/browser`
+```typescript
+import { executeProtectedAction } from '@realitylimit/core/browser';
+
+// Trigger the OS hardware prompt (FaceID / Windows Hello)
+const attResp = await executeProtectedAction(fidoOptions);
+```
+
+---
+
+## Security Boundary
+
+This demo implements the full RealityLimit security model. For the complete attack scenario analysis, see:
+
+- [`../../docs/transaction-flow-and-security.md`](../../docs/transaction-flow-and-security.md)
+- [`../../SECURITY.md`](../../SECURITY.md)
+
+---
+
+## What Is Not in This Demo (v1.0.0 Gaps)
+
+- No second-device registration UI *(schema supports multiple devices; UI not built)*
+- No account recovery flow *(planned for v1.1.0)*
+- No device de-registration endpoint *(planned for v1.1.0)*
+- Balance is per-user only *(no real recipient balance update — demo scope)*
+
+See [`../../spec/CHANGELOG.md`](../../spec/CHANGELOG.md) for the full roadmap.
+
+---
 
 ## License
 MIT

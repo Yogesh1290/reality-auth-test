@@ -1,6 +1,6 @@
-import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 import dbConnect from '@/lib/db';
 import { Challenge, User } from '@/lib/models';
+import { verifyTransactionExecution } from '@realitylimit/core/server';
 
 export async function POST(req: Request) {
     await dbConnect();
@@ -9,7 +9,6 @@ export async function POST(req: Request) {
     // Find the latest challenge specifically generated for a transaction
     const challengeDoc = await Challenge.findOne({ userId, intent: { $exists: true } }).sort({ createdAt: -1 });
     if (!challengeDoc) return Response.json({ verified: false, error: 'Transaction challenge expired or missing' }, { status: 400 });
-    const expectedChallenge = challengeDoc.challenge;
     
     // Safety check - what is the intent?
     const intent = JSON.parse(challengeDoc.intent || '{}');
@@ -25,25 +24,18 @@ export async function POST(req: Request) {
     }
 
     try {
-        // NATIVE FIDO TRANSACTION SIGNING: Apple/Google mathematically signs the challenge
-        // which officially authorizes the embedded intent! No external Javascript MACs!
-        const verification = await verifyAuthenticationResponse({
-            response: attResp,
-            expectedChallenge,
-            expectedOrigin: process.env.NEXT_PUBLIC_ORIGIN || 'http://localhost:3000',
-            expectedRPID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
-            credential: {
-                id: activeCredential.credentialID,
-                publicKey: activeCredential.credentialPublicKey,
-                counter: activeCredential.counter,
-                transports: attResp.response.transports
-            }
-        });
+        // NATIVE OS EXECUTION WRAPPER
+        const verification = await verifyTransactionExecution(
+             process.env.NEXT_PUBLIC_RP_ID || 'localhost',
+             process.env.NEXT_PUBLIC_ORIGIN || 'http://localhost:3000',
+             attResp,
+             challengeDoc.challenge,
+             activeCredential
+        );
 
         if (verification.verified) {
             // Consume the challenge 
             await Challenge.deleteOne({ _id: challengeDoc._id });
-            
             activeCredential.counter = verification.authenticationInfo.newCounter;
             await user.save();
 
