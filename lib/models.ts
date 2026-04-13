@@ -20,8 +20,8 @@ const CredentialSchema = new Schema({
 const UserSchema = new Schema({
     userId: { type: String, required: true, unique: true },
     credentials: [CredentialSchema],
-    // Hashed recovery code — stored as SHA-256 hash, never as plaintext
     recoveryCodeHash: { type: String, required: false },
+    balance: { type: Number, default: 125000 }, // Demo balance in USD
 });
 
 export const Challenge = mongoose.models.Challenge || mongoose.model('Challenge', ChallengeSchema);

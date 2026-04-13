@@ -91,6 +91,9 @@ export default function Home() {
 
       if (verification.verified) {
         setStatus("Access Granted. Authentic Hardware Tied.");
+        // Load real balance from DB
+        const balData = await fetch(`/api/auth/balance?userId=${userId}`).then(r => r.json());
+        if (balData.balance !== undefined) setBalance(balData.balance);
         setTimeout(() => setIsAuthenticated(true), 1000);
       } else {
         setStatus("Authentication Failed.");
@@ -228,7 +231,7 @@ export default function Home() {
       const result = await res.json();
 
       if (result.verified) {
-        setBalance(prev => prev - Number(amount));
+        setBalance(result.newBalance);  // Use server-confirmed balance
         setStatus(result.message);
         setAmount("");
       } else {
