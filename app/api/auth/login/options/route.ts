@@ -4,7 +4,13 @@ import { Challenge, User } from '@/lib/models';
 
 export async function POST(req: Request) {
     await dbConnect();
-    const { userId } = await req.json();
+    const body = await req.json();
+    const userId = body.userId;
+
+    // SECURITY PATCH: Prevent NoSQL Injection via Object Operators { "$ne": null }
+    if (typeof userId !== 'string' || !userId) {
+        return Response.json({ error: 'Invalid userId format' }, { status: 400 });
+    }
 
     // Check if user is registered in MongoDB
     const user = await User.findOne({ userId });
