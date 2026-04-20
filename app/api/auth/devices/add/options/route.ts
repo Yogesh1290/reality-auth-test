@@ -2,6 +2,8 @@ import dbConnect from '@/lib/db';
 import { User, Challenge } from '@/lib/models';
 import { generateRegistrationOptions } from '@simplewebauthn/server';
 
+import crypto from 'crypto';
+
 // POST /api/auth/devices/add/options
 // Generates WebAuthn registration options for an authenticated user adding a second device.
 export async function POST(req: Request) {
@@ -18,11 +20,15 @@ export async function POST(req: Request) {
             return Response.json({ error: 'User not found' }, { status: 404 });
         }
 
+        // Windows 11 CaBLE Protocol Strict Rule: userID MUST be universally unique and ideally exactly 32 bytes natively.
+        const hashedUserId = new Uint8Array(crypto.createHash('sha256').update(userId).digest());
+
         const options = await generateRegistrationOptions({
             rpName: 'RealityLimit Auth',
             rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
-            userID: new TextEncoder().encode(userId), // Required as Uint8Array in v13+
+            userID: hashedUserId, // Required as Uint8Array 32-byte hash
             userName: userId,
+            timeout: 60000,
             attestationType: 'none',
             authenticatorSelection: {
                 // Changing from 'required' to 'preferred'. 

@@ -2,6 +2,8 @@ import { generateRegistrationOptions } from '@simplewebauthn/server';
 import dbConnect from '@/lib/db';
 import { Challenge, User } from '@/lib/models';
 
+import crypto from 'crypto';
+
 export async function POST(req: Request) {
     await dbConnect();
     const { userId } = await req.json();
@@ -14,11 +16,16 @@ export async function POST(req: Request) {
         type: 'public-key' as const,
     })) : undefined;
 
+    // Windows 11 CaBLE Protocol Strict Rule: userID MUST be universally unique and ideally exactly 32 or 64 bytes natively.
+    // Short 5-byte TextEncoder strings trigger internal parsing assertions in the Hybrid transport bridge!
+    const hashedUserId = new Uint8Array(crypto.createHash('sha256').update(userId).digest());
+
     const options = await generateRegistrationOptions({
         rpName: 'RealityLimit Bank',
         rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
-        userID: new TextEncoder().encode(userId),
+        userID: hashedUserId,
         userName: userId,
+        timeout: 60000,
         attestationType: 'none',
         excludeCredentials,
         authenticatorSelection: {
