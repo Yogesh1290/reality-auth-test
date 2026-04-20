@@ -3,7 +3,32 @@ import dbConnect from '@/lib/db';
 import { Challenge, User } from '@/lib/models';
 import crypto from 'crypto';
 
+// In-Memory Rate Limiter (Protects MongoDB from DDoS/Spam scripts)
+const rateLimitMap = new Map<string, { count: number, resetTime: number }>();
+
+function isRateLimited(ip: string): boolean {
+    const now = Date.now();
+    const limitData = rateLimitMap.get(ip);
+    
+    // Reset or initialize count (Max 5 requests per minute per IP)
+    if (!limitData || now > limitData.resetTime) {
+        rateLimitMap.set(ip, { count: 1, resetTime: now + 60000 });
+        return false;
+    }
+    if (limitData.count >= 5) {
+        return true; // Block DB Access!
+    }
+    limitData.count += 1;
+    return false;
+}
+
 export async function POST(req: Request) {
+    // SECURITY PATCH: Stop Database DoS Attacks!
+    const ip = req.headers.get('x-forwarded-for') || 'unknown-ip';
+    if (isRateLimited(ip)) {
+        return Response.json({ error: 'Too many requests. Firewall blocked database execution.' }, { status: 429 });
+    }
+
     await dbConnect();
     const body = await req.json();
     const userId = body.userId;
