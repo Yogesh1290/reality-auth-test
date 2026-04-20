@@ -25,9 +25,11 @@ export async function POST(req: Request) {
             userName: userId,
             attestationType: 'none',
             authenticatorSelection: {
-                authenticatorAttachment: 'platform',
-                residentKey: 'required',
-                userVerification: 'required',
+                // Changing from 'required' to 'preferred'. 
+                // Smartphones will STILL generate strict Resident Keys + FaceID, 
+                // but setting it to 'preferred' stops Windows CaBLE tunnels from crashing.
+                residentKey: 'preferred',
+                userVerification: 'preferred',
             },
             // Exclude credentials already registered to force a truly new key
             excludeCredentials: user.credentials.map((cred: any) => ({

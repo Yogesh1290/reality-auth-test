@@ -6,29 +6,30 @@ export async function POST(req: Request) {
     await dbConnect();
     const { userId } = await req.json();
 
-    // Fetch existing user to find mapped credentials
     const user = await User.findOne({ userId });
     
-    // Support Multiple Devices: Map all existing credentials into exclude list to prevent duplicate keys
-    const excludeCredentials = user?.credentials?.map((cred: any) => ({
+    // Safely structure credentials or leave undefined to prevent CaBLE array crashes
+    const excludeCredentials = user?.credentials?.length > 0 ? user.credentials.map((cred: any) => ({
         id: cred.credentialID,
         type: 'public-key' as const,
-        transports: cred.transports,
-    })) || [];
+    })) : undefined;
 
     const options = await generateRegistrationOptions({
         rpName: 'RealityLimit Bank',
         rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
         userID: new TextEncoder().encode(userId),
         userName: userId,
+        attestationType: 'none',
         excludeCredentials,
         authenticatorSelection: {
-            residentKey: 'required',
-            userVerification: 'required'
+            // FIX: Changing from 'required' to 'preferred'. 
+            // Smartphones (Apple/Android) will STILL generate strict Resident Keys + FaceID, 
+            // but setting it to 'preferred' stops Windows CaBLE tunnels from crashing the handshake.
+            residentKey: 'preferred',
+            userVerification: 'preferred'
         },
     });
 
-    // Save challenge to MongoDB
     await Challenge.findOneAndUpdate(
         { userId },
         { challenge: options.challenge, createdAt: new Date() },
