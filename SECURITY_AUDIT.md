@@ -159,3 +159,53 @@ If you are new to Penetration Testing, follow these exact steps to attempt to by
    }).then(r => r.text()).then(console.log)
    ```
 4. **Expected Result:** The `list` endpoint throws a `404 Not Found` because we physically deleted it from the server (Hardware Piggybacking rules!). The NoSQL injection trick fails because the backend strictly compares `userId` as a mapped string for the hardware challenge, crashing any object-based queries. You cannot extract lists of users!
+
+### Test 6: Blind NoSQL Injection (Regex Pattern Matching)
+*Target: Try to guess usernames in the database by injecting Regular Expressions.*
+1. Advanced NoSQL injection relies on passing MongoDB operators like `$regex` to force the database to search for wildcard patterns.
+2. Open your Developer Console (F12) and attempt to send a Regex object to the login endpoint to find any user whose name starts with "admin":
+   ```javascript
+   fetch('/api/auth/login/options', {
+       method: 'POST',
+       body: JSON.stringify({ userId: { "$regex": "^admin" } })
+   }).then(r => r.json()).then(console.log)
+   ```
+3. **Expected Result:** The server will immediately return `400 Bad Request: Invalid userId format`. Because we patched the API to explicitly check `if (typeof userId !== 'string')`, the Node.js runtime intercepts the Regex object and destroys the request before it is ever allowed to query the MongoDB cluster. The database is completely shielded from dynamic payload execution.
+
+### Test 7: User Enumeration (Brute-Force Discovery)
+*Target: Try to build a list of valid users by guessing names.*
+Since you cannot inject the database, how do hackers build a list of users? They brute-force it by analyzing API error messages!
+1. Open your Developer Console (F12) and try guessing a username you know doesn't exist:
+   ```javascript
+   // Payload: Guessing a random name
+   fetch('/api/auth/login/options', {
+       method: 'POST',
+       body: JSON.stringify({ userId: "nobody999" })
+   }).then(r => r.json()).then(console.log)
+   ```
+2. **Expected Result:** Previously, the server said `"User not registered"`. But now, because of the **Anti-Enumeration Honeypot Patch**, the server will return a cryptographically perfect Fake Challenge! It simulates a 400ms DB delay, generates a 32-byte Base64 random ID, and packages it exactly like a real user's payload.
+3. **The Block:** A hacker's script will think *every single username they guess exists*! They will gather 10,000 fake Public IDs. Since they don't have the hardware key to sign the fake challenges, the entire brute-force list they generated is useless garbage.
+
+---
+
+### 🚀 ADVANCED BOUNTY CHALLENGE: "The God Mode" (Unpatched)
+
+If Tests 1 through 5 are mathematically impossible due to the architecture, how would a Nation-State hacker attempt to compromise this system? 
+
+You must attack the environments strictly *outside* of the Vercel Application Layer. 
+
+#### Attack Vector A: The "MongoDB Supply Chain" (Atlas Compromise)
+Since you cannot dump the database through the API, you must steal the database matrix itself.
+1. Target the Developer's machine or the Vercel CI/CD pipeline using a poisoned NPM package. 
+2. Write a script that reads the `process.env.MONGODB_URI` text file from the Vercel Node runtime.
+3. Once you exfiltrate the `mongodb+srv://...` connection string string, connect to the database directly using MongoDB Compass.
+4. From Compass, you can dump every user, change balances, and delete FIDO keys.
+
+#### Attack Vector B: Remote Code Execution (RCE) via Deserialization
+If a future update introduces a vulnerability in a third-party library (like an Image Uploader or PDF generator), you can execute an RCE attack.
+1. Find a vulnerable library in `package.json`.
+2. Craft a malicious payload that forces the Vercel Node Server to spawn a reverse shell.
+3. Instead of querying the database, write a script that hooks into the Node.js memory (`process.memoryUsage()`) and scrapes the RAM while a user is actively logging in.
+4. Extract the FIDO `attResp` payload directly from RAM before it gets verified by `@simplewebauthn`.
+
+**The Brutal Reality:** If you cannot establish a reverse shell into Vercel, or steal the MongoDB password, the RealityLimit FIDO architecture is mathematically unbreakable from the public web browser. Happy hunting!

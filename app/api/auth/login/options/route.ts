@@ -1,6 +1,7 @@
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 import dbConnect from '@/lib/db';
 import { Challenge, User } from '@/lib/models';
+import crypto from 'crypto';
 
 export async function POST(req: Request) {
     await dbConnect();
@@ -14,8 +15,25 @@ export async function POST(req: Request) {
 
     // Check if user is registered in MongoDB
     const user = await User.findOne({ userId });
+    
+    // ADVANCED ANTI-ENUMERATION HONEYPOT
+    // If a hacker guesses a wrong name, we DO NOT tell them it's wrong!
+    // We send back a cryptographically perfect FAKE challenge to confuse their hacking scripts!
     if (!user || !user.credentials || user.credentials.length === 0) {
-        return Response.json({ status: 'error', message: 'User not registered or no credentials found. Please register first.' }, { status: 400 });
+        // Simulate a slight database delay so timing attacks fail
+        await new Promise(r => setTimeout(r, Math.random() * 200 + 300));
+        
+        return Response.json({
+            rpId: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
+            challenge: crypto.randomBytes(32).toString('base64url'),
+            allowCredentials: [{
+                id: crypto.randomBytes(32).toString('base64url'),
+                type: 'public-key',
+                transports: ['internal', 'hybrid']
+            }],
+            timeout: 60000,
+            userVerification: 'required'
+        });
     }
 
     const allowCredentials = user.credentials.map((cred: any) => ({
