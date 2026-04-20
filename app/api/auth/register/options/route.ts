@@ -25,14 +25,13 @@ export async function POST(req: Request) {
         rpID: process.env.NEXT_PUBLIC_RP_ID || 'localhost',
         userID: hashedUserId,
         userName: userId,
+        userDisplayName: userId, // VITAL: Passkey Vaults crash over CaBLE if this is missing because they cannot name the credential!
         timeout: 60000,
         attestationType: 'none',
-        // iPhones strictly use ES256 (-7) for Passkeys. If RS256 (-257) is negotiated over CaBLE, the iPhone bridge may aggressively crash!
-        supportedAlgorithmIDs: [-7], 
         excludeCredentials,
         authenticatorSelection: {
-            residentKey: 'required', // Passkeys must technically be resident
-            userVerification: 'preferred'
+            residentKey: 'required',
+            userVerification: 'required' 
         },
     });
 
