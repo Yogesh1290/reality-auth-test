@@ -27,12 +27,11 @@ export async function POST(req: Request) {
         userName: userId,
         timeout: 60000,
         attestationType: 'none',
+        // iPhones strictly use ES256 (-7) for Passkeys. If RS256 (-257) is negotiated over CaBLE, the iPhone bridge may aggressively crash!
+        supportedAlgorithmIDs: [-7], 
         excludeCredentials,
         authenticatorSelection: {
-            // FIX: Changing from 'required' to 'preferred'. 
-            // Smartphones (Apple/Android) will STILL generate strict Resident Keys + FaceID, 
-            // but setting it to 'preferred' stops Windows CaBLE tunnels from crashing the handshake.
-            residentKey: 'preferred',
+            residentKey: 'required', // Passkeys must technically be resident
             userVerification: 'preferred'
         },
     });
