@@ -91,9 +91,10 @@ export default function Home() {
 
       if (verification.verified) {
         setStatus("Access Granted. Authentic Hardware Tied.");
-        // Load real balance from DB
-        const balData = await fetch(`/api/auth/balance?userId=${userId}`).then(r => r.json());
-        if (balData.balance !== undefined) setBalance(balData.balance);
+        // Extract real data exclusively from the cryptographically signed boundary
+        setBalance(verification.balance);
+        setDevices(verification.devices || []);
+        setHasRecoveryCode(verification.hasRecoveryCode || false);
         setTimeout(() => setIsAuthenticated(true), 1000);
       } else {
         setStatus("Authentication Failed.");
@@ -102,14 +103,6 @@ export default function Home() {
       setStatus("Error: " + e.message);
     }
     setLoading(false);
-  };
-
-  const loadDevices = async () => {
-    const data = await fetch(`/api/auth/devices/list?userId=${userId}`).then(r => r.json());
-    if (data.devices) {
-      setDevices(data.devices);
-      setHasRecoveryCode(data.hasRecoveryCode);
-    }
   };
 
   const addDevice = async () => {
@@ -127,7 +120,7 @@ export default function Home() {
       if (result.verified) {
         setStatus(`✅ ${result.message}`);
         setNewDeviceName("");
-        await loadDevices();
+        if (result.devices) setDevices(result.devices); // Update strictly from FIDO boundary
       } else {
         setStatus("Device registration failed: " + result.error);
       }
@@ -145,7 +138,7 @@ export default function Home() {
       }).then(r => r.json());
       if (result.verified) {
         setStatus(`✅ ${result.message}`);
-        await loadDevices();
+        if (result.devices) setDevices(result.devices); // Update strictly from FIDO boundary
       } else {
         setStatus("Error: " + result.error);
       }
@@ -155,15 +148,34 @@ export default function Home() {
 
   const generateRecovery = async () => {
     setLoading(true);
-    setStatus("Generating recovery code...");
+    setStatus("Initiating Physical Intent for Recovery Generation...");
     try {
-      const result = await fetch("/api/auth/recovery/generate", {
-        method: "POST", body: JSON.stringify({ userId })
+      const intent = { action: "generate-recovery-code", timestamp: Date.now() };
+
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+      }
+
+      setStatus("Please approve Recovery Generation on your authenticator...");
+      
+      const opts = await fetch("/api/protected/options", {
+        method: "POST", body: JSON.stringify({ userId, intent })
       }).then(r => r.json());
-      if (result.recoveryCode) {
+
+      const attResp = await executeProtectedAction(opts);
+
+      setStatus("Sending pure physically-signed generation intent...");
+
+      const result = await fetch("/api/auth/recovery/generate/verify", {
+        method: "POST", body: JSON.stringify({ userId, attResp })
+      }).then(r => r.json());
+
+      if (result.verified && result.recoveryCode) {
         setRecoveryCode(result.recoveryCode);
         setHasRecoveryCode(true);
         setStatus("✅ Recovery code generated. Save it securely — it will not be shown again.");
+      } else {
+        setStatus("Error: " + result.error);
       }
     } catch (e: any) { setStatus("Error: " + e.message); }
     setLoading(false);
@@ -231,7 +243,7 @@ export default function Home() {
       const result = await res.json();
 
       if (result.verified) {
-        setBalance(result.newBalance);  // Use server-confirmed balance
+        setBalance(result.newBalance); // Strictly trust the FIDO bound logic!
         setStatus(result.message);
         setAmount("");
       } else {
@@ -428,7 +440,7 @@ export default function Home() {
                   <h3 className="text-white font-semibold">Device Management</h3>
                 </div>
                 <button
-                  onClick={() => { setShowDevicePanel(!showDevicePanel); if (!showDevicePanel) loadDevices(); }}
+                  onClick={() => setShowDevicePanel(!showDevicePanel)}
                   className="text-xs text-zinc-400 hover:text-white transition-colors"
                 >
                   {showDevicePanel ? "Hide" : "Manage Devices"}

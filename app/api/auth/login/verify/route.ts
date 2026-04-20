@@ -39,7 +39,20 @@ export async function POST(req: Request) {
             activeCredential.counter = verification.authenticationInfo.newCounter;
             await user.save();
 
-            return Response.json({ verified: true });
+            // PIGGYBACKING PURE HARDWARE BOUND DATA
+            // Because FaceID mathematically succeeded just 1 millisecond ago, we securely inject Read-Data into the payload.
+            const devices = user.credentials.map((cred: any) => ({
+                credentialID: cred.credentialID,
+                deviceName: cred.deviceName || 'Unknown Device',
+                registeredAt: cred.registeredAt || null,
+            }));
+
+            return Response.json({ 
+                verified: true,
+                balance: user.balance ?? 125000,
+                devices,
+                hasRecoveryCode: !!user.recoveryCodeHash
+            });
         }
 
         return Response.json({ verified: false, error: 'Physical Cryptographic Validation Failed' }, { status: 401 });

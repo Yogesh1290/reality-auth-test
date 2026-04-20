@@ -51,9 +51,16 @@ export async function POST(req: Request) {
         await user.save();
         await Challenge.deleteOne({ _id: challengeDoc._id });
 
+        const mappedDevices = user.credentials.map((cred: any) => ({
+            credentialID: cred.credentialID,
+            deviceName: cred.deviceName || 'Unknown Device',
+            registeredAt: cred.registeredAt || null,
+        }));
+
         return Response.json({
             verified: true,
             message: `New device "${deviceName || 'New Device'}" registered successfully.`,
+            devices: mappedDevices,
             totalDevices: user.credentials.length
         });
     } catch (err) {

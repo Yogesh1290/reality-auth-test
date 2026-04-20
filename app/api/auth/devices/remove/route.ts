@@ -33,9 +33,16 @@ export async function DELETE(req: Request) {
     user.credentials = user.credentials.filter((c: any) => c.credentialID !== credentialID);
     await user.save();
 
+    const mappedDevices = user.credentials.map((cred: any) => ({
+        credentialID: cred.credentialID,
+        deviceName: cred.deviceName || 'Unknown Device',
+        registeredAt: cred.registeredAt || null,
+    }));
+
     return Response.json({
         verified: true,
         message: 'Device removed successfully.',
+        devices: mappedDevices,
         remainingDevices: user.credentials.length
     });
 }
