@@ -9,10 +9,13 @@ import crypto from 'crypto';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { userId, deviceName } = await req.json();
+        const body = await req.json();
+        const userId = body.userId;
+        const deviceName = body.deviceName;
 
-        if (!userId) {
-            return Response.json({ error: 'userId is required' }, { status: 400 });
+        // SECURITY PATCH: Prevent NoSQL Injection via Object Operators { "$ne": null }
+        if (typeof userId !== 'string' || !userId) {
+            return Response.json({ error: 'Invalid userId format' }, { status: 400 });
         }
 
         const user = await User.findOne({ userId });

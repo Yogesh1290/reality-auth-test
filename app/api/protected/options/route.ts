@@ -4,7 +4,14 @@ import { Challenge, User } from '@/lib/models';
 
 export async function POST(req: Request) {
     await dbConnect();
-    const { userId, intent } = await req.json();
+    const body = await req.json();
+    const userId = body.userId;
+    const intent = body.intent;
+
+    // SECURITY PATCH: Prevent NoSQL Injection
+    if (typeof userId !== 'string' || !userId) {
+        return Response.json({ error: 'Invalid userId format' }, { status: 400 });
+    }
 
     const user = await User.findOne({ userId });
     if (!user || !user.credentials || user.credentials.length === 0) {
